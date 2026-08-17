@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>CRM — замовлення</title>
+<style>
+  body { font-family: Arial, sans-serif; background: #f4f4f7; margin: 0; padding: 24px; color: #222; }
+  h1 { font-size: 20px; margin-bottom: 16px; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  button { padding: 6px 14px; border: 1px solid #ccc; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  button:hover { background: #f0f0f0; }
+  button.active { border-color: #9b59b6; background: #f4ecf9; color: #9b59b6; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; padding: 10px 8px; font-size: 13px; border-bottom: 1px solid #eee; }
+  th { color: #888; font-weight: 600; }
+  .badge { padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  .b-prom { background: #fde8de; color: #b3401f; }
+  .b-rozetka { background: #dcebfb; color: #185fa5; }
+  .b-sajt { background: #d8f0e6; color: #0f6e56; }
+  .muted { color: #888; font-size: 12px; }
+  .ttn-btn { font-size: 12px; padding: 4px 10px; }
+</style>
+</head>
+<body>
+<h1>Останні замовлення</h1>
+<div class="toolbar" id="filters"></div>
+<div class="toolbar">
+  <button onclick="syncNow()">Оновити зараз</button>
+</div>
+<table>
+  <thead>
+    <tr>
+      <th>Джерело</th><th>Клієнт</th><th>Товар</th><th>Доставка</th><th>ЕН</th>
+    </tr>
+  </thead>
+  <tbody id="rows"></tbody>
+</table>
+
+<script>
+let allOrders = [];
+let activeFilter = 'all';
+
+async function loadOrders() {
+  const res = await fetch('/api/orders');
+  allOrders = await res.json();
+  renderFilters();
+  renderRows();
+}
+
+async function syncNow() {
+  await fetch('/api/sync', { method: 'POST' });
+  await loadOrders();
+}
+
+function renderFilters() {
+  const sources = ['all', ...new Set(allOrders.map(o => o.source))];
+  const el = document.getElementById('filters');
+  el.innerHTML = '';
+  sources.forEach(s => {
+    const btn = document.createElement('button');
+    btn.textContent = s === 'all' ? 'Всі джерела' : s;
+    if (s === activeFilter) btn.classList.add('active');
+    btn.onclick = () => { activeFilter = s; renderFilters(); renderRows(); };
+    el.appendChild(btn);
+  });
+}
+
+function badgeClass(source) {
+  if (source === 'Prom') return 'b-prom';
+  if (source === 'Rozetka') return 'b-rozetka';
+  return 'b-sajt';
+}
+
+function renderRows() {
+  const list = activeFilter === 'all' ? allOrders : allOrders.filter(o => o.source === activeFilter);
+  document.getElementById('rows').innerHTML = list.map(o => `
+    <tr>
+      <td><span class="badge ${badgeClass(o.source)}">${o.source}</span></td>
+      <td>
+        <div>${o.client_name || '-'}</div>
+        <div class="muted">${o.client_phone || ''}</div>
+        <div class="muted">${o.city || ''}${o.branch ? ', ' + o.branch : ''}</div>
+      </td>
+      <td>${o.product_name || '-'}${o.size ? ' (' + o.size + ')' : ''}</td>
+      <td>${o.delivery_type || '-'}</td>
+      <td>${o.ttn ? o.ttn : `<button class="ttn-btn" onclick="generateInvoice('${o.id}')">Згенерувати</button>`}</td>
+    </tr>
+  `).join('');
+}
+
+async function generateInvoice(id) {
+  const res = await fetch(`/api/orders/${id}/invoice`, { method: 'POST' });
+  const data = await res.json();
+  if (data.error) { alert('Помилка створення ЕН: ' + data.error); return; }
+  await loadOrders();
+}
+
+loadOrders();
+setInterval(loadOrders, 30000);
+</script>
+</body>
+</html>
